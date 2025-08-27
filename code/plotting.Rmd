@@ -1,0 +1,291 @@
+Load all packages
+```{r }
+library(readr)
+library(tidyr)
+library(ggplot2)
+library(dplyr)
+library(viridis)
+library(scales)
+library(patchwork)
+```
+
+## Figure 1A Heatmap
+
+```{r}
+mod_count <- read_csv("~/mod_count_average_reported.csv")
+mod_count_long <- mod_count %>%
+  pivot_longer(
+    cols = c(YouTube, Meta, Twitter, TikTok, Snapchat, LinkedIn), 
+    names_to = "Platform", 
+    values_to = "ModeratorCount"
+  ) %>%
+  mutate(
+    Supported = case_when(
+      Platform == "YouTube" ~ YouTube_supoprted,
+      Platform == "Meta" ~ Meta_supported,
+      Platform == "Twitter" ~ Twitter_supported,
+      Platform == "TikTok" ~ TikTok_supported,
+      Platform == "Snapchat" ~ SnapChat_supported,
+      Platform == "LinkedIn" ~ LinkedIn_supported,
+      TRUE ~ 0
+    ),
+    Reported = !is.na(ModeratorCount),
+    ZeroFlag = ModeratorCount == 0 & Reported,
+    LogCount = log10(ModeratorCount + 1),
+    # Create border styling based on support
+    BorderColor = ifelse(Supported == 1, "black", "transparent"),
+    BorderSize = ifelse(Supported == 1, 1.2, 0.3)
+  )
+
+platform_order <- c("YouTube", "Meta", "TikTok", "Twitter", "Snapchat", "LinkedIn")
+mod_count_long$Platform <- factor(mod_count_long$Platform, levels = platform_order)
+
+df1a_with_symbols <- ggplot(mod_count_long, aes(x = Platform, y = reorder(Language, desc(Language)))) +
+  geom_tile(aes(fill = LogCount), color = "white", na.rm = FALSE) +
+  geom_point(data = subset(mod_count_long, Supported == 1), 
+             aes(x = Platform, y = reorder(Language, desc(Language))), 
+             shape = 8, size = 1.5, color = "white", stroke = 0.5) +
+  scale_fill_gradientn(
+    colours = c("#c7625b", "#deebf7", "#AFC7D0", "#95B4CC", "#799FCB", "#03324e"),
+    values = scales::rescale(c(0, 0.2, 0.7, 2, 3, 4)),
+    breaks = log10(c(0, 1, 10, 100, 1000, 10000) + 1),
+    labels = c("0", "1", "10", "100", "1,000", "10,000"),
+    name = "Moderator count",
+    na.value = "gray"
+  ) +
+  labs(x = "Platform", y = "Language") +
+  theme_minimal(base_size = 17) +
+  theme(
+    axis.text.x = element_text(angle = 0, hjust = 0.5, size = 15),
+    axis.text.y = element_text(size = 17),
+    legend.position = "right",
+    legend.box = "horizontal",
+    legend.title = element_text(size = 16, face = "bold"),
+    legend.text = element_text(size = 16),
+    panel.grid = element_blank(),
+    plot.caption = element_text(size = 12, hjust = 0)
+  )
+
+print(df1a_with_symbols)
+```
+
+# Figure 1B Local Language Distribution
+
+```{r}
+df1b <- read_csv("~/local_language.csv")
+df1b_tidy <- df1b %>%
+  pivot_longer(cols = -country_long, names_to = "Language_Type", values_to = "Percentage") %>%
+  mutate(
+    Language_Type = factor(Language_Type, 
+                           levels = c("Local", "English", "Other", "Only Emojis/Links"),
+                           labels = c("Local Language", "English", "Other Languages", "Only Emojis/Links")),
+    country_long = factor(country_long, levels = rev(df1b$country_long))  # Reverse for better reading
+  )
+
+df1b_stacked <- ggplot(df1b_tidy, aes(x = country_long, y = Percentage, fill = Language_Type)) +
+  geom_bar(stat = "identity", width = 0.8) +
+  scale_fill_manual(
+    values = c("Local Language" = "#2b8cbe", 
+               "English" = "#a6bddb", 
+               "Other Languages" = "#b3cde0", 
+               "Only Emojis/Links" = "gray"),
+    name = "Language category"
+  ) +
+  scale_y_continuous(labels = function(x) paste0(x, "%"), expand = c(0, 0)) +
+  labs(
+    x = "Country",
+    y = "Proportion of tweets in a one day Twitter dataset"
+  ) +
+  coord_flip() +
+  theme_minimal(base_size = 16) +
+  theme(
+    legend.position = "right",
+    legend.title = element_text(size = 16, face = "bold"),
+    legend.text = element_text(size = 16),
+    plot.title = element_text(size = 16, face = "bold", hjust = 0),
+    axis.text.y = element_text(size = 16),
+    axis.text.x = element_text(size = 16)
+  ) +
+  guides(fill = guide_legend(nrow = 4))
+
+print(df1b_stacked)
+```
+
+# Figure 1C User Missing Moderators
+
+```{r}
+df1c <- read_csv("~/user_no_moderator.csv")
+user_cols <- c("LinkedIn_user_count", "Twitter_user_count", "Snapchat_user_count", 
+               "YouTube_user_count", "Meta_user_count", "TikTok_user_count")
+df1c <- df1c %>%
+  mutate(across(all_of(user_cols), ~ as.numeric(gsub(",", "", .))))
+```
+## Mapping countries to regions
+Mapping countries missing moderators to European regions using UN Geoscheme, and excluding Irish and Maltese as they are official languages alongside English in their respective countries. 
+
+```{r}
+region_map <- c(
+  "Bulgaria" = "Eastern", "Romania" = "Eastern","Hungary" = "Eastern", "Czechia" = "Eastern", "Slovakia" = "Eastern",
+  "Greece" = "Southern","Croatia" = "Southern", "Slovenia" = "Southern",
+  "Denmark" = "Northern", "Finland" = "Northern", "Sweden" = "Northern", "Estonia" = "Northern", "Latvia" = "Northern", "Lithuania" = "Northern"
+)
+
+df1c_filtered <- df1c %>%
+  filter(!Language %in% c("Irish", "Maltese"))
+df1c_filtered <- df1c_filtered %>%
+  mutate(region = region_map[country]) %>%
+  filter(!is.na(region))  
+```
+
+## Calculate the number and proportion of users missing moderators for each platform.
+Excluding Irish and Maltese, YouTube, Meta, and TikTok have at least one moderator for the rest of the languages. Here we used placeholder to indicate the total user numbers in the EU of YouTube, Meta, and TikTok.
+```{r}
+platforms <- list(
+  LinkedIn  = list(mod = "LinkedIn_mod_count",  user = "LinkedIn_user_count",  total = 49150000),
+  Twitter   = list(mod = "Twitter_mod_count",   user = "Twitter_user_count",   total = 113527761),
+  Snapchat  = list(mod = "Snapchat_mod_count",  user = "Snapchat_user_count",  total = 94868883),
+  YouTube   = list(mod = "YouTube_mod_count",   user = "YouTube_user_count",   total = 100000000),
+  Meta      = list(mod = "Meta_mod_count",      user = "Meta_user_count",      total = 100000000),
+  TikTok    = list(mod = "TikTok_mod_count",    user = "TikTok_user_count",    total = 100000000)
+)
+
+results <- lapply(names(platforms), function(platform) {
+  mod_col <- platforms[[platform]]$mod
+  user_col <- platforms[[platform]]$user
+  total_users <- platforms[[platform]]$total
+  
+  missing_users <- df1c_filtered %>%
+    filter(!!sym(mod_col) == 0) %>%
+    summarise(missing = sum(!!sym(user_col), na.rm = TRUE)) %>%
+    pull(missing)
+  
+  proportion <- missing_users / total_users
+  
+  data.frame(platform = platform, 
+             users_missing_moderator = missing_users,
+             proportion_missing = proportion)
+})
+
+results_df <- bind_rows(results)
+
+results_by_region <- lapply(names(platforms), function(platform) {
+  mod_col <- platforms[[platform]]$mod
+  user_col <- platforms[[platform]]$user
+  total <- platforms[[platform]]$total
+  
+  df1c_filtered %>%
+    filter(!!sym(mod_col) == 0) %>%
+    group_by(region) %>%
+    summarise(users_missing_moderator = sum(!!sym(user_col), na.rm = TRUE), .groups = "drop") %>%
+    mutate(platform = platform,
+           proportion_missing = users_missing_moderator / total)
+})
+
+results_region_df <- bind_rows(results_by_region)
+platform_order <- results_region_df %>%
+  group_by(platform) %>%
+  summarise(total_missing = sum(users_missing_moderator)) %>%
+  arrange(desc(total_missing)) %>%
+  pull(platform)
+
+results_region_df$platform <- factor(results_region_df$platform, levels = platform_order)
+
+region_colors <- c(
+  "Western"  = "#deebf7",
+  "Northern" = "#d87458",
+  "Southern" = "#f29f79",
+  "Eastern"  = "#f08b5c"
+)
+
+df1c_bar <- ggplot(results_region_df, aes(x = platform, y = users_missing_moderator, fill = region)) +
+  geom_bar(stat = "identity") +
+  scale_fill_manual(values = region_colors) +
+  scale_y_continuous(labels = scales::label_number_si()) +
+  labs(
+    x = "Platform",
+    y = "Users Missing Moderators",
+    fill = "European region"
+  ) +
+  theme_minimal(base_size = 17) +
+  theme(
+    legend.position = "right",
+    panel.grid.major.x = element_blank(),
+    legend.title = element_text(size = 16, face = "bold"),
+    legend.text = element_text(size = 16),
+    plot.title = element_text(size = 16, face = "bold", hjust = 0),
+    axis.text.y = element_text(size = 16),
+    axis.text.x = element_text(size = 16, angle = 45, hjust = 1)
+  ) +
+  guides(fill = guide_legend(nrow = 3, byrow = TRUE))
+
+print(df1c_bar)
+```
+
+# Figure 1D Normalized Twitter Moderator Count
+
+```{r}
+df1d <- read_csv("~/bar_plot_normalized_counts_twitter.csv")
+
+df1d_bar <- ggplot(df1d, aes(x = reorder(Language, Mean))) +
+  geom_col(aes(y = Mean), fill = "#799fc8", alpha = 0.7, width = 0.6) +
+  geom_errorbar(aes(ymin = CI_lower, ymax = CI_upper), 
+                width = 0.3, color = "#03324e", size = 0.8) +
+  geom_text(aes(y = Mean, label = round(Mean, 1)), 
+            hjust = -0.5, size = 4, color = "#03324e") +
+  labs(
+    title = "Twitter/X",
+    x = "Language",
+    y = "Moderator count per million daily posts"
+  ) +
+  coord_flip() +
+  theme_minimal(base_size = 17) +
+  theme(
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.text.y = element_text(size = 17),
+    plot.title = element_text(size = 17, face = "bold", hjust = 0.5),
+  )
+
+print(df1d_bar)
+```
+
+# Figure 1E Normalized YouTube Moderator Count
+
+```{r}
+df1e <- read_csv("/Users/diyiliu/OneDrive - Nexus365/02 Side Projects/Moderation workforce/youtube_normalized_counts.csv")
+df1e_bar <- ggplot(df1e, aes(x = reorder(language_full, normalized_count_mod_count_high_confidence))) +
+  geom_col(aes(y = normalized_count_mod_count_high_confidence), fill = "#c7625b", alpha = 0.7, width = 0.6) +
+  geom_text(aes(y = normalized_count_mod_count_high_confidence, label = round(normalized_count_mod_count_high_confidence, 1)), 
+            hjust = -0.3, size = 4, color = "#03324e") +
+  labs(
+    title = "YouTube",
+    x = "Language",
+    y = "Moderator count per thousand daily videos"
+  ) +
+  coord_flip() +
+  theme_minimal(base_size = 17) +
+  theme(
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.text.y = element_text(size = 17),
+    plot.title = element_text(size = 17, face = "bold", hjust = 0.5),
+  )
+
+print(df1e_bar)
+```
+
+# Combine all plots into final figure ----
+```{r}
+final_plot <- (df1a_with_symbols + (df1b_stacked / df1c_bar + plot_layout(heights = c(1.2, 1))) + 
+                  plot_layout(widths = c(1.5, 1))) / 
+  (df1d_bar + df1e_bar + plot_layout(widths = c(1.5, 1))) +
+  plot_layout(heights = c(1.3, 1)) +
+  plot_annotation(
+    tag_levels = "A"
+  )
+
+print(final_plot)
+
+ggsave("~/Figure1.pdf", 
+       plot = final_plot, width = 16, height = 18, units = "in")
+```
