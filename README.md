@@ -46,7 +46,7 @@ Contains scripts and notebooks for modeling, calibration, and visualization.
 ---
 
 ## Notes
-- All Twitter/X and YouTube data shared here follow platform policies: only IDs are included, not raw text.  
+- All Twitter/X and YouTube data shared here follow platform policies: only IDs are included, not raw text. We also do not share the representative samples of Twitter/X and YouTube and refer the reader to [this website](https://search.gesis.org/research_data/SDN-10.7802-2516) to get access to tweet IDs from the TwitterDay dataset.
 - Calibration models are provided to allow replication of language inference adjustments.  
 
 ---
